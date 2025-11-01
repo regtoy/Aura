@@ -11,6 +11,16 @@ Bu depo, FastAPI tabanlı Aura servisinin ilk fazı için temel iskeleti içerir
 
 Bağımlılıkları yüklemek için `pip install -e .[dev]` komutunu çalıştırın. Ardından testleri `pytest` ile çalıştırabilirsiniz.
 
+## Veritabanı Migrasyonları
+
+Projede SQLModel tabanlı tablolar Alembic ile yönetilmektedir. Migrasyonları uygulamak için aşağıdaki adımları izleyin:
+
+1. Gerekli bağımlılıkları yükleyin: `pip install -e .[dev]`
+2. Hedef veritabanını işaret eden `DATABASE_URL` ortam değişkenini (ör. `postgresql+asyncpg://kullanici:sifre@localhost:5432/aura`) tanımlayın.
+3. Migrasyonları uygulayın: `alembic -c infra/alembic/alembic.ini upgrade head`
+
+Yeni bir şema değişikliği için otomatik bir revizyon oluşturmak isterseniz `alembic -c infra/alembic/alembic.ini revision --autogenerate -m "açıklama"` komutunu kullanabilirsiniz. Alembic komutları varsayılan olarak `infra/alembic` dizinindeki konfigürasyonu kullanır.
+
 ## Gözlemlenebilirlik
 
 Uygulama, başlangıçta yapılandırılabilir bir logger ve isteğe bağlı OpenTelemetry tracer'ı devreye alır. Aşağıdaki ortam değişkenleri `env.example` dosyasında belgelenmiştir ve `.env` dosyanızda düzenlenerek kullanılabilir:

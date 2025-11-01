@@ -1,113 +1,141 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
 
-from apps.api.services.tickets import TicketRepository, TicketStatus
-
-
-class DummyAcquire:
-    def __init__(self, connection):
-        self._connection = connection
-
-    async def __aenter__(self):
-        return self._connection
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-
-class DummyPool:
-    def __init__(self, connection):
-        self._connection = connection
-
-    def acquire(self):
-        return DummyAcquire(self._connection)
+from apps.api.services.tickets import (
+    Ticket,
+    TicketAggregate,
+    TicketAuditLog,
+    TicketMessage,
+    TicketRepository,
+    TicketStatus,
+)
 
 
-@pytest.mark.asyncio
-async def test_ensure_schema_creates_tables():
-    connection = AsyncMock()
-    pool = DummyPool(connection)
-    repository = TicketRepository(pool)
+@pytest_asyncio.fixture
+async def engine() -> AsyncEngine:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
 
-    await repository.ensure_schema()
 
-    assert connection.execute.await_count == 3
-    executed = [call.args[0] for call in connection.execute.await_args_list]
-    assert any("CREATE TABLE IF NOT EXISTS tickets" in stmt for stmt in executed)
-    assert any("ticket_messages" in stmt for stmt in executed)
-    assert any("ticket_audit_logs" in stmt for stmt in executed)
+@pytest_asyncio.fixture
+async def session_factory(engine: AsyncEngine) -> async_sessionmaker:
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    return async_sessionmaker(engine, expire_on_commit=False)
 
 
 @pytest.mark.asyncio
-async def test_update_ticket_status_returns_ticket():
+async def test_ensure_schema_creates_tables(engine: AsyncEngine):
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    repo = TicketRepository(factory, engine=engine)
+
+    await repo.ensure_schema()
+
+    async with engine.begin() as conn:
+        tables = await conn.run_sync(lambda sync_conn: set(sa_inspect(sync_conn).get_table_names()))
+
+    assert {"tickets", "ticket_messages", "ticket_audit_logs"}.issubset(tables)
+
+
+@pytest.mark.asyncio
+async def test_update_ticket_status_returns_ticket(
+    session_factory: async_sessionmaker, engine: AsyncEngine
+):
+    repo = TicketRepository(session_factory, engine=engine)
+
     now = datetime.now(timezone.utc)
-    row = {
-        "id": "ticket-1",
-        "title": "Deneme",
-        "status": "triaged",
-        "priority": "medium",
-        "requester": "editor",
-        "metadata": {"foo": "bar"},
-        "created_at": now,
-        "updated_at": now,
-    }
-    connection = AsyncMock()
-    connection.fetchrow = AsyncMock(return_value=row)
-    pool = DummyPool(connection)
-    repository = TicketRepository(pool)
+    ticket = Ticket(
+        id="ticket-1",
+        title="Deneme",
+        status=TicketStatus.NEW,
+        priority="medium",
+        requester="editor",
+        metadata={"foo": "bar"},
+        created_at=now,
+        updated_at=now,
+    )
+    message = TicketMessage(
+        id="msg-1",
+        ticket_id=ticket.id,
+        author="editor",
+        content="Merhaba",
+        normalized_content="Merhaba",
+        embedding=[1.0, 2.0],
+        created_at=now,
+    )
+    audit = TicketAuditLog(
+        id="audit-1",
+        ticket_id=ticket.id,
+        action="created",
+        actor="editor",
+        from_status=None,
+        to_status=TicketStatus.NEW,
+        metadata={},
+        created_at=now,
+    )
 
-    updated = await repository.update_ticket_status("ticket-1", TicketStatus.TRIAGED, now)
+    await repo.create_ticket(ticket, message, audit)
 
-    assert updated is not None
+    updated_time = datetime.now(timezone.utc)
+    updated = await repo.update_ticket_status(ticket.id, TicketStatus.TRIAGED, updated_time)
+
+    assert isinstance(updated, Ticket)
     assert updated.status == TicketStatus.TRIAGED
-    connection.fetchrow.assert_awaited()
+    assert updated.updated_at == updated_time
 
 
 @pytest.mark.asyncio
-async def test_get_ticket_aggregates_rows():
+async def test_get_ticket_aggregates_rows(
+    session_factory: async_sessionmaker, engine: AsyncEngine
+):
+    repo = TicketRepository(session_factory, engine=engine)
+
     now = datetime.now(timezone.utc)
-    ticket_row = {
-        "id": "ticket-1",
-        "title": "Deneme",
-        "status": "new",
-        "priority": "medium",
-        "requester": "editor",
-        "metadata": {},
-        "created_at": now,
-        "updated_at": now,
-    }
-    message_row = {
-        "id": "msg-1",
-        "ticket_id": "ticket-1",
-        "author": "editor",
-        "content": "Merhaba",
-        "normalized_content": "Merhaba",
-        "embedding": [1.0, 2.0],
-        "created_at": now,
-    }
-    audit_row = {
-        "id": "audit-1",
-        "ticket_id": "ticket-1",
-        "action": "created",
-        "actor": "editor",
-        "from_status": None,
-        "to_status": "new",
-        "metadata": {},
-        "created_at": now,
-    }
+    ticket = Ticket(
+        id="ticket-1",
+        title="Deneme",
+        status=TicketStatus.NEW,
+        priority="medium",
+        requester="editor",
+        metadata={},
+        created_at=now,
+        updated_at=now,
+    )
+    message = TicketMessage(
+        id="msg-1",
+        ticket_id=ticket.id,
+        author="editor",
+        content="Merhaba",
+        normalized_content="Merhaba",
+        embedding=[1.0, 2.0],
+        created_at=now,
+    )
+    audit = TicketAuditLog(
+        id="audit-1",
+        ticket_id=ticket.id,
+        action="created",
+        actor="editor",
+        from_status=None,
+        to_status=TicketStatus.NEW,
+        metadata={},
+        created_at=now,
+    )
 
-    connection = AsyncMock()
-    connection.fetchrow = AsyncMock(side_effect=[ticket_row])
-    connection.fetch = AsyncMock(side_effect=[[message_row], [audit_row]])
-    pool = DummyPool(connection)
-    repository = TicketRepository(pool)
+    await repo.create_ticket(ticket, message, audit)
 
-    aggregate = await repository.get_ticket("ticket-1")
-    assert aggregate is not None
-    assert aggregate.ticket.id == "ticket-1"
-    assert aggregate.messages[0].id == "msg-1"
+    aggregate = await repo.get_ticket(ticket.id)
+
+    assert isinstance(aggregate, TicketAggregate)
+    assert aggregate.ticket.id == ticket.id
+    assert aggregate.messages[0].id == message.id
     assert aggregate.audit_logs[0].action == "created"

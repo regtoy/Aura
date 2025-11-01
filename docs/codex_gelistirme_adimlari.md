@@ -44,6 +44,8 @@ Toplam **18 adım** öngörülmüştür.
 ### Adım 4 – Veri Tabanı Şemaları (PostgreSQL)
 - SQLModel veya SQLAlchemy modelleri (tickets, `ticket_messages`, `allowed_domains`, `confidence_stats`, `users`).
 - Alembic migration başlangıcı.
+- `alembic -c infra/alembic/alembic.ini upgrade head` komutu ile migrasyonların uygulanması.
+- Yeni bir şema değişikliği için `alembic -c infra/alembic/alembic.ini revision --autogenerate -m "kısa açıklama"` komutunu kullan.
 
 <a id="adim-5-qdrant-istemci-modulu"></a>
 ### Adım 5 – Qdrant İstemci Modülü

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
-import asyncpg
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlmodel import SQLModel, select
+
+from packages.db.models import ConfidenceStatsTable
 
 
 @dataclass(slots=True)
@@ -84,40 +88,11 @@ class ConfidenceStats:
 class ConfidenceStatsRepository:
     """Repository responsible for the `confidence_stats` table management."""
 
-    _UPSERT_SQL = """
-    INSERT INTO confidence_stats (metric, sample_count, success_count, failure_count, rolling_score, rolling_threshold, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-    ON CONFLICT (metric) DO UPDATE
-    SET sample_count = EXCLUDED.sample_count,
-        success_count = EXCLUDED.success_count,
-        failure_count = EXCLUDED.failure_count,
-        rolling_score = EXCLUDED.rolling_score,
-        rolling_threshold = EXCLUDED.rolling_threshold,
-        updated_at = CURRENT_TIMESTAMP
-    """
-
-    _SELECT_SQL = """
-    SELECT metric, sample_count, success_count, failure_count, rolling_score, rolling_threshold
-    FROM confidence_stats
-    WHERE metric = $1
-    """
-
-    _CREATE_TABLE_SQL = """
-    CREATE TABLE IF NOT EXISTS confidence_stats (
-        metric TEXT PRIMARY KEY,
-        sample_count INTEGER NOT NULL DEFAULT 0,
-        success_count INTEGER NOT NULL DEFAULT 0,
-        failure_count INTEGER NOT NULL DEFAULT 0,
-        rolling_score DOUBLE PRECISION NOT NULL,
-        rolling_threshold DOUBLE PRECISION NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-    """
-
     def __init__(
         self,
-        pool: asyncpg.Pool,
+        session_factory: async_sessionmaker[AsyncSession],
         *,
+        engine: AsyncEngine | None = None,
         default_threshold: float = 0.6,
         smoothing_factor: float = 0.2,
         min_threshold: float = 0.2,
@@ -128,36 +103,50 @@ class ConfidenceStatsRepository:
         if not 0.0 <= min_threshold <= max_threshold <= 1.0:
             raise ValueError("threshold bounds must satisfy 0 <= min <= max <= 1")
 
-        self._pool = pool
+        self._session_factory = session_factory
+        self._engine: AsyncEngine | None = engine
         self._smoothing_factor = smoothing_factor
         self._min_threshold = min_threshold
         self._max_threshold = max_threshold
         self._default_threshold = max(min_threshold, min(max_threshold, default_threshold))
 
     async def ensure_schema(self) -> None:
-        async with self._pool.acquire() as connection:
-            await connection.execute(self._CREATE_TABLE_SQL)
+        if self._engine is None:
+            raise RuntimeError("Session factory is not bound to an async engine")
+        async with self._engine.begin() as connection:
+            await connection.run_sync(SQLModel.metadata.create_all)
 
     async def ensure_metric(self, metric: str) -> ConfidenceStats:
-        async with self._pool.acquire() as connection:
-            row = await connection.fetchrow(self._SELECT_SQL, metric)
+        async with self._session_factory() as session:
+            row = await session.get(ConfidenceStatsTable, metric)
             if row is None:
                 stats = ConfidenceStats.with_default(metric, self._default_threshold)
-                await connection.execute(self._UPSERT_SQL, *stats.as_tuple())
+                row = ConfidenceStatsTable(
+                    metric=stats.metric,
+                    sample_count=stats.sample_count,
+                    success_count=stats.success_count,
+                    failure_count=stats.failure_count,
+                    rolling_score=stats.rolling_score,
+                    rolling_threshold=stats.rolling_threshold,
+                    updated_at=datetime.now(timezone.utc),
+                )
+                session.add(row)
+                await session.commit()
+                await session.refresh(row)
                 return stats
-            return self._row_to_stats(row)
+            return self._table_to_stats(row)
 
     async def get_threshold(self, metric: str) -> float:
         stats = await self.ensure_metric(metric)
         return stats.rolling_threshold
 
     async def record_outcome(self, metric: str, *, score: float, passed: bool) -> ConfidenceStats:
-        async with self._pool.acquire() as connection:
-            row = await connection.fetchrow(self._SELECT_SQL, metric)
+        async with self._session_factory() as session:
+            row = await session.get(ConfidenceStatsTable, metric)
             if row is None:
                 stats = ConfidenceStats.with_default(metric, self._default_threshold)
             else:
-                stats = self._row_to_stats(row)
+                stats = self._table_to_stats(row)
 
             updated = stats.updated(
                 score=score,
@@ -166,16 +155,30 @@ class ConfidenceStatsRepository:
                 min_threshold=self._min_threshold,
                 max_threshold=self._max_threshold,
             )
-            await connection.execute(self._UPSERT_SQL, *updated.as_tuple())
+
+            if row is None:
+                row = ConfidenceStatsTable(metric=metric)
+                session.add(row)
+
+            row.sample_count = updated.sample_count
+            row.success_count = updated.success_count
+            row.failure_count = updated.failure_count
+            row.rolling_score = updated.rolling_score
+            row.rolling_threshold = updated.rolling_threshold
+            row.updated_at = datetime.now(timezone.utc)
+
+            await session.commit()
+            await session.refresh(row)
             return updated
 
     @staticmethod
-    def _row_to_stats(row: Any) -> ConfidenceStats:
+    def _table_to_stats(row: ConfidenceStatsTable) -> ConfidenceStats:
         return ConfidenceStats(
-            metric=str(row["metric"]),
-            sample_count=int(row["sample_count"]),
-            success_count=int(row["success_count"]),
-            failure_count=int(row["failure_count"]),
-            rolling_score=float(row["rolling_score"]),
-            rolling_threshold=float(row["rolling_threshold"]),
+            metric=row.metric,
+            sample_count=row.sample_count,
+            success_count=row.success_count,
+            failure_count=row.failure_count,
+            rolling_score=row.rolling_score,
+            rolling_threshold=row.rolling_threshold,
         )
+
