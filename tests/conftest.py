@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import types
 
@@ -56,3 +57,13 @@ def stub_external_dependencies():
         sys.modules["fastapi"] = fastapi_module
         sys.modules["fastapi.security"] = security_module
     yield
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem):
+    testfunction = pyfuncitem.obj
+    if asyncio.iscoroutinefunction(testfunction):
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
+        asyncio.run(testfunction(**kwargs))
+        return True
+    return None

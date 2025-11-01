@@ -2,14 +2,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import answers, ping
+from app.api.routes import answers, ping, tickets
 from app.core.config import get_settings
 from app.services.postgres import PostgresConnectionTester
 from app.services.qdrant import QdrantConnectionTester
 
 
 @asynccontextmanager
-def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
+async def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
     settings = get_settings()
     postgres_tester = PostgresConnectionTester(dsn=settings.postgres_dsn)
     qdrant_tester = QdrantConnectionTester(
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(ping.router)
     app.include_router(answers.router)
+    app.include_router(tickets.router)
     return app
 
 
