@@ -24,6 +24,11 @@ class QdrantConnectionTester:
             )
         return self._client
 
+    def get_client(self) -> QdrantClient:
+        """Return the lazily initialised :class:`QdrantClient`."""
+
+        return self._ensure_client()
+
     async def close(self) -> None:
         if self._client is not None:
             await self._client.async_close()

@@ -10,6 +10,7 @@ from apps.api.core.logging import configure_logging, init_tracer, shutdown_trace
 from apps.api.services.postgres import PostgresConnectionTester
 from apps.api.services.qdrant import QdrantConnectionTester
 from apps.api.services.tickets import TicketProcessingPipeline, TicketRepository, TicketService
+from packages.retrieval import QdrantCollectionConfig, ensure_collection_async
 
 
 def _to_asyncpg_dsn(dsn: str) -> str:
@@ -52,6 +53,13 @@ def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
         app.state.ticket_service = TicketService(ticket_repository, pipeline=ticket_pipeline)
         app.state.db_engine = db_engine
         app.state.db_session_factory = session_factory
+        collection_config = QdrantCollectionConfig(
+            name=settings.qdrant_collection_name,
+            vector_size=settings.qdrant_vector_size,
+            distance=settings.qdrant_distance,
+            on_disk_payload=settings.qdrant_on_disk_payload,
+        )
+        await ensure_collection_async(qdrant_tester.get_client(), collection_config)
     except Exception:  # pragma: no cover - service initialisation best effort
         app.state.ticket_service = None
         if db_engine is not None:

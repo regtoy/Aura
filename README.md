@@ -11,6 +11,22 @@ Bu depo, FastAPI tabanlı Aura servisinin ilk fazı için temel iskeleti içerir
 
 Bağımlılıkları yüklemek için `pip install -e .[dev]` komutunu çalıştırın. Ardından testleri `pytest` ile çalıştırabilirsiniz.
 
+### Qdrant Yapılandırması
+
+Projede vektör verilerini yönetmek için [qdrant-client](https://github.com/qdrant/qdrant-client) kullanılır. Geliştirme sırasında Qdrant bağlantı ayarlarını aşağıdaki ortam değişkenleri ile yapılandırabilirsiniz:
+
+```bash
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+QDRANT_API_KEY=
+QDRANT_COLLECTION_NAME=aura-documents
+QDRANT_VECTOR_SIZE=384
+QDRANT_DISTANCE=cosine
+QDRANT_ON_DISK_PAYLOAD=true
+```
+
+Uygulama başlatıldığında bu ayarlar kullanılarak ilgili koleksiyonun varlığı doğrulanır; koleksiyon eksikse belirtilen vektör boyutu ve distance metriği ile otomatik olarak oluşturulur.
+
 ## Veritabanı Migrasyonları
 
 Projede SQLModel tabanlı tablolar Alembic ile yönetilmektedir. Migrasyonları uygulamak için aşağıdaki adımları izleyin:
