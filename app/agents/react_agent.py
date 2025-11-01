@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol
 
 from app.security.whitelist import WhitelistValidationError, whitelist_pre_run_hook
+
+from app.metrics import MetricsRegistry, metrics_registry as default_metrics_registry
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +198,7 @@ class ReactAgent:
         *,
         max_steps: int = 10,
         pre_run_hooks: Optional[Iterable[PreRunHook]] = None,
+        metrics: Optional[MetricsRegistry] = None,
     ) -> None:
         self.planner = planner
         self.tool_selector = tool_selector
@@ -205,6 +209,7 @@ class ReactAgent:
         self._current_instruction: Optional[str] = None
         self._finished = False
         self._pre_run_hooks: List[PreRunHook] = list(pre_run_hooks or [])
+        self.metrics = metrics or default_metrics_registry
 
         if whitelist_pre_run_hook not in self._pre_run_hooks:
             self._pre_run_hooks.append(whitelist_pre_run_hook)
@@ -226,23 +231,36 @@ class ReactAgent:
         """
 
         logger.info("Agent run started with task: %s", task_description)
+        run_start = perf_counter()
+        self.metrics.counter("react_agent_runs_total").inc()
         try:
             self._run_pre_run_hooks(task_description)
         except WhitelistValidationError:
             logger.error("Whitelist validation failed for task: %s", task_description)
+            self.metrics.counter("react_agent_run_failures_total").inc()
+            self.metrics.counter("react_agent_whitelist_failures_total").inc()
             raise
         except Exception:  # pragma: no cover - defensive
             logger.exception("Pre-run hook failed for task: %s", task_description)
+            self.metrics.counter("react_agent_run_failures_total").inc()
             raise
-        self.memory.update_plan(self.planner.create_plan(task_description))
-        for instruction in self.memory.plan:
-            if self._current_step >= self.max_steps:
-                logger.warning("Max steps reached; stopping execution")
-                break
-            self._execute_instruction(instruction)
-        self._finished = True
-        logger.info("Agent run completed after %d steps", self._current_step)
-        return self.memory.history
+        try:
+            self.memory.update_plan(self.planner.create_plan(task_description))
+            for instruction in self.memory.plan:
+                if self._current_step >= self.max_steps:
+                    logger.warning("Max steps reached; stopping execution")
+                    break
+                self._execute_instruction(instruction)
+            self._finished = True
+            logger.info("Agent run completed after %d steps", self._current_step)
+            return self.memory.history
+        except Exception:
+            self.metrics.counter("react_agent_run_failures_total").inc()
+            raise
+        finally:
+            self.metrics.distribution("react_agent_run_duration_seconds").observe(
+                perf_counter() - run_start
+            )
 
     def step(self) -> Optional[Dict[str, Any]]:
         """Advance the agent by a single step.
@@ -275,28 +293,54 @@ class ReactAgent:
         self._current_instruction = instruction
         thought = f"Considering: {instruction}"
         logger.debug("Step %d thought: %s", self._current_step + 1, thought)
+        step_start = perf_counter()
+        tool_label = {"tool": "unknown"}
         try:
             tool = self.tool_selector.pick_tool(instruction)
+            tool_label = {"tool": tool.name}
             raw_result = tool(instruction)
         except ToolNotFoundError:
             logger.exception("Tool selection failed")
             observation = self.observation_processor.process("No suitable tool")
             self.memory.record_step(thought=thought, action="none", observation=observation)
             self._current_step += 1
+            failure_labels = {"tool": "unmatched"}
+            self.metrics.counter("react_agent_tool_failures_total").inc(labels=failure_labels)
+            self.metrics.distribution("react_agent_step_duration_seconds").observe(
+                perf_counter() - step_start,
+                labels=failure_labels,
+            )
+            self.metrics.counter("react_agent_steps_total").inc()
             return self.memory.history[-1]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Unexpected error during tool selection")
+            self.metrics.counter("react_agent_tool_failures_total").inc(labels=tool_label)
+            self.metrics.distribution("react_agent_step_duration_seconds").observe(
+                perf_counter() - step_start,
+                labels=tool_label,
+            )
             raise ToolExecutionError("Failed during tool selection") from exc
 
         try:
             observation = self.observation_processor.process(raw_result)
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Observation processing failed")
+            self.metrics.counter("react_agent_tool_failures_total").inc(labels=tool_label)
+            self.metrics.distribution("react_agent_step_duration_seconds").observe(
+                perf_counter() - step_start,
+                labels=tool_label,
+            )
             raise ToolExecutionError("Observation processing failed") from exc
 
         self.memory.record_step(thought=thought, action=tool.name, observation=observation)
         self._current_step += 1
         logger.info("Step %d completed with tool '%s'", self._current_step, tool.name)
+        self.metrics.counter("react_agent_tool_success_total").inc(labels=tool_label)
+        self.metrics.distribution("react_agent_step_duration_seconds").observe(
+            perf_counter() - step_start,
+            labels=tool_label,
+        )
+        self.metrics.counter("react_agent_steps_total").inc()
         return self.memory.history[-1]
 
 
