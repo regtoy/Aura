@@ -2,10 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import answers, ping
+from app.api.routes import answers, ping, tickets
 from app.core.config import get_settings
 from app.services.postgres import PostgresConnectionTester
 from app.services.qdrant import QdrantConnectionTester
+from app.services.tickets import TicketProcessingPipeline, TicketRepository, TicketService
 
 
 @asynccontextmanager
@@ -21,6 +22,14 @@ def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
     app.state.postgres_tester = postgres_tester
     app.state.qdrant_tester = qdrant_tester
     try:
+        pool = await postgres_tester.get_pool()
+        ticket_repository = TicketRepository(pool)
+        await ticket_repository.ensure_schema()
+        ticket_pipeline = TicketProcessingPipeline()
+        app.state.ticket_service = TicketService(ticket_repository, pipeline=ticket_pipeline)
+    except Exception:  # pragma: no cover - service initialisation best effort
+        app.state.ticket_service = None
+    try:
         yield
     finally:
         await postgres_tester.close()
@@ -32,6 +41,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(ping.router)
     app.include_router(answers.router)
+    app.include_router(tickets.router)
     return app
 
 

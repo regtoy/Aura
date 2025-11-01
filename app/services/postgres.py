@@ -29,6 +29,11 @@ class PostgresConnectionTester:
             await self._pool.close()
             self._pool = None
 
+    async def get_pool(self) -> asyncpg.Pool:
+        """Return the underlying connection pool, creating it if necessary."""
+
+        return await self._ensure_pool()
+
     def test_connection_sync(self, timeout: float = 5.0) -> bool:
         """Blocking helper that can be used from synchronous contexts."""
 
