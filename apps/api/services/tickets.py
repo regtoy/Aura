@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping, Protocol, Sequence
 
-import asyncpg
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlmodel import SQLModel, select
+
+from packages.db.models import TicketAuditLogTable, TicketMessageTable, TicketTable
 
 
 class TicketNotFoundError(RuntimeError):
@@ -164,111 +167,20 @@ class TicketProcessingPipeline:
 class TicketRepository:
     """Persistence helper wrapping `tickets`, `ticket_messages` and audit logs."""
 
-    _CREATE_TICKETS_SQL = """
-    CREATE TABLE IF NOT EXISTS tickets (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        status TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        requester TEXT NOT NULL,
-        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-        created_at TIMESTAMPTZ NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL
-    )
-    """
-
-    _CREATE_MESSAGES_SQL = """
-    CREATE TABLE IF NOT EXISTS ticket_messages (
-        id TEXT PRIMARY KEY,
-        ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-        author TEXT NOT NULL,
-        content TEXT NOT NULL,
-        normalized_content TEXT NOT NULL,
-        embedding JSONB,
-        created_at TIMESTAMPTZ NOT NULL
-    )
-    """
-
-    _CREATE_AUDIT_SQL = """
-    CREATE TABLE IF NOT EXISTS ticket_audit_logs (
-        id TEXT PRIMARY KEY,
-        ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-        action TEXT NOT NULL,
-        actor TEXT NOT NULL,
-        from_status TEXT,
-        to_status TEXT,
-        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-        created_at TIMESTAMPTZ NOT NULL
-    )
-    """
-
-    _INSERT_TICKET_SQL = """
-    INSERT INTO tickets (id, title, status, priority, requester, metadata, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-    """
-
-    _INSERT_MESSAGE_SQL = """
-    INSERT INTO ticket_messages (id, ticket_id, author, content, normalized_content, embedding, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-    """
-
-    _INSERT_AUDIT_SQL = """
-    INSERT INTO ticket_audit_logs (id, ticket_id, action, actor, from_status, to_status, metadata, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-    """
-
-    _SELECT_TICKET_SQL = """
-    SELECT id, title, status, priority, requester, metadata, created_at, updated_at
-    FROM tickets
-    WHERE id = $1
-    """
-
-    _SELECT_TICKETS_SQL = """
-    SELECT id, title, status, priority, requester, metadata, created_at, updated_at
-    FROM tickets
-    ORDER BY created_at DESC
-    """
-
-    _SELECT_MESSAGES_SQL = """
-    SELECT id, ticket_id, author, content, normalized_content, embedding, created_at
-    FROM ticket_messages
-    WHERE ticket_id = $1
-    ORDER BY created_at ASC
-    """
-
-    _SELECT_AUDIT_LOGS_SQL = """
-    SELECT id, ticket_id, action, actor, from_status, to_status, metadata, created_at
-    FROM ticket_audit_logs
-    WHERE ticket_id = $1
-    ORDER BY created_at ASC
-    """
-
-    _UPDATE_STATUS_SQL = """
-    UPDATE tickets
-    SET status = $2, updated_at = $3
-    WHERE id = $1
-    RETURNING id, title, status, priority, requester, metadata, created_at, updated_at
-    """
-
-    _TOUCH_TICKET_SQL = """
-    UPDATE tickets
-    SET updated_at = $2
-    WHERE id = $1
-    RETURNING id, title, status, priority, requester, metadata, created_at, updated_at
-    """
-
-    _DELETE_TICKET_SQL = """
-    DELETE FROM tickets WHERE id = $1 RETURNING id
-    """
-
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self._pool = pool
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        engine: AsyncEngine | None = None,
+    ) -> None:
+        self._session_factory = session_factory
+        self._engine: AsyncEngine | None = engine
 
     async def ensure_schema(self) -> None:
-        async with self._pool.acquire() as connection:
-            await connection.execute(self._CREATE_TICKETS_SQL)
-            await connection.execute(self._CREATE_MESSAGES_SQL)
-            await connection.execute(self._CREATE_AUDIT_SQL)
+        if self._engine is None:
+            raise RuntimeError("Session factory is not bound to an async engine")
+        async with self._engine.begin() as connection:
+            await connection.run_sync(SQLModel.metadata.create_all)
 
     async def create_ticket(
         self,
@@ -276,159 +188,182 @@ class TicketRepository:
         message: TicketMessage,
         audit: TicketAuditLog,
     ) -> None:
-        async with self._pool.acquire() as connection:
-            await connection.execute(
-                self._INSERT_TICKET_SQL,
-                ticket.id,
-                ticket.title,
-                ticket.status.value,
-                ticket.priority,
-                ticket.requester,
-                dict(ticket.metadata),
-                ticket.created_at,
-                ticket.updated_at,
-            )
-            await connection.execute(
-                self._INSERT_MESSAGE_SQL,
-                message.id,
-                message.ticket_id,
-                message.author,
-                message.content,
-                message.normalized_content,
-                list(message.embedding),
-                message.created_at,
-            )
-            await connection.execute(
-                self._INSERT_AUDIT_SQL,
-                audit.id,
-                audit.ticket_id,
-                audit.action,
-                audit.actor,
-                audit.from_status.value if audit.from_status else None,
-                audit.to_status.value if audit.to_status else None,
-                dict(audit.metadata),
-                audit.created_at,
-            )
+        async with self._session_factory() as session:
+            async with session.begin():
+                session.add(
+                    TicketTable(
+                        id=ticket.id,
+                        title=ticket.title,
+                        status=ticket.status.value,
+                        priority=ticket.priority,
+                        requester=ticket.requester,
+                        metadata_=dict(ticket.metadata),
+                        created_at=ticket.created_at,
+                        updated_at=ticket.updated_at,
+                    )
+                )
+                session.add(
+                    TicketMessageTable(
+                        id=message.id,
+                        ticket_id=message.ticket_id,
+                        author=message.author,
+                        content=message.content,
+                        normalized_content=message.normalized_content,
+                        embedding=list(message.embedding),
+                        created_at=message.created_at,
+                    )
+                )
+                session.add(
+                    TicketAuditLogTable(
+                        id=audit.id,
+                        ticket_id=audit.ticket_id,
+                        action=audit.action,
+                        actor=audit.actor,
+                        from_status=audit.from_status.value if audit.from_status else None,
+                        to_status=audit.to_status.value if audit.to_status else None,
+                        metadata_=dict(audit.metadata),
+                        created_at=audit.created_at,
+                    )
+                )
 
     async def add_message(self, message: TicketMessage) -> None:
-        async with self._pool.acquire() as connection:
-            await connection.execute(
-                self._INSERT_MESSAGE_SQL,
-                message.id,
-                message.ticket_id,
-                message.author,
-                message.content,
-                message.normalized_content,
-                list(message.embedding),
-                message.created_at,
-            )
+        async with self._session_factory() as session:
+            async with session.begin():
+                session.add(
+                    TicketMessageTable(
+                        id=message.id,
+                        ticket_id=message.ticket_id,
+                        author=message.author,
+                        content=message.content,
+                        normalized_content=message.normalized_content,
+                        embedding=list(message.embedding),
+                        created_at=message.created_at,
+                    )
+                )
 
     async def add_audit_log(self, audit: TicketAuditLog) -> None:
-        async with self._pool.acquire() as connection:
-            await connection.execute(
-                self._INSERT_AUDIT_SQL,
-                audit.id,
-                audit.ticket_id,
-                audit.action,
-                audit.actor,
-                audit.from_status.value if audit.from_status else None,
-                audit.to_status.value if audit.to_status else None,
-                dict(audit.metadata),
-                audit.created_at,
-            )
+        async with self._session_factory() as session:
+            async with session.begin():
+                session.add(
+                    TicketAuditLogTable(
+                        id=audit.id,
+                        ticket_id=audit.ticket_id,
+                        action=audit.action,
+                        actor=audit.actor,
+                        from_status=audit.from_status.value if audit.from_status else None,
+                        to_status=audit.to_status.value if audit.to_status else None,
+                        metadata_=dict(audit.metadata),
+                        created_at=audit.created_at,
+                    )
+                )
 
     async def get_ticket(self, ticket_id: str) -> TicketAggregate | None:
-        async with self._pool.acquire() as connection:
-            ticket_row = await connection.fetchrow(self._SELECT_TICKET_SQL, ticket_id)
+        async with self._session_factory() as session:
+            ticket_row = await session.get(TicketTable, ticket_id)
             if ticket_row is None:
                 return None
-            message_rows = await connection.fetch(self._SELECT_MESSAGES_SQL, ticket_id)
-            audit_rows = await connection.fetch(self._SELECT_AUDIT_LOGS_SQL, ticket_id)
 
-        ticket = self._row_to_ticket(ticket_row)
-        messages = [self._row_to_message(row) for row in message_rows]
-        audits = [self._row_to_audit(row) for row in audit_rows]
+            message_result = await session.execute(
+                select(TicketMessageTable)
+                .where(TicketMessageTable.ticket_id == ticket_id)
+                .order_by(TicketMessageTable.created_at.asc())
+            )
+            audit_result = await session.execute(
+                select(TicketAuditLogTable)
+                .where(TicketAuditLogTable.ticket_id == ticket_id)
+                .order_by(TicketAuditLogTable.created_at.asc())
+            )
+
+        ticket = self._table_to_ticket(ticket_row)
+        messages = [self._table_to_message(row) for row in message_result.scalars().all()]
+        audits = [self._table_to_audit(row) for row in audit_result.scalars().all()]
         return TicketAggregate(ticket=ticket, messages=messages, audit_logs=audits)
 
     async def list_tickets(self) -> Sequence[Ticket]:
-        async with self._pool.acquire() as connection:
-            rows = await connection.fetch(self._SELECT_TICKETS_SQL)
-        return [self._row_to_ticket(row) for row in rows]
+        async with self._session_factory() as session:
+            result = await session.execute(select(TicketTable).order_by(TicketTable.created_at.desc()))
+            return [self._table_to_ticket(row) for row in result.scalars().all()]
 
     async def update_ticket_status(
         self, ticket_id: str, status: TicketStatus, updated_at: datetime
     ) -> Ticket | None:
-        async with self._pool.acquire() as connection:
-            row = await connection.fetchrow(self._UPDATE_STATUS_SQL, ticket_id, status.value, updated_at)
-        if row is None:
-            return None
-        return self._row_to_ticket(row)
+        async with self._session_factory() as session:
+            ticket_row = await session.get(TicketTable, ticket_id)
+            if ticket_row is None:
+                return None
+            ticket_row.status = status.value
+            ticket_row.updated_at = updated_at
+            await session.commit()
+            await session.refresh(ticket_row)
+            return self._table_to_ticket(ticket_row)
 
     async def touch_ticket(self, ticket_id: str, updated_at: datetime) -> Ticket | None:
-        async with self._pool.acquire() as connection:
-            row = await connection.fetchrow(self._TOUCH_TICKET_SQL, ticket_id, updated_at)
-        if row is None:
-            return None
-        return self._row_to_ticket(row)
+        async with self._session_factory() as session:
+            ticket_row = await session.get(TicketTable, ticket_id)
+            if ticket_row is None:
+                return None
+            ticket_row.updated_at = updated_at
+            await session.commit()
+            await session.refresh(ticket_row)
+            return self._table_to_ticket(ticket_row)
 
     async def delete_ticket(self, ticket_id: str) -> bool:
-        async with self._pool.acquire() as connection:
-            row = await connection.fetchrow(self._DELETE_TICKET_SQL, ticket_id)
-        return row is not None
+        async with self._session_factory() as session:
+            ticket_row = await session.get(TicketTable, ticket_id)
+            if ticket_row is None:
+                return False
+            await session.delete(ticket_row)
+            await session.commit()
+            return True
 
     @staticmethod
-    def _row_to_ticket(row: Mapping[str, Any]) -> Ticket:
-        metadata = row.get("metadata") or {}
-        status = TicketStatus(str(row["status"]))
+    def _table_to_ticket(row: TicketTable) -> Ticket:
         return Ticket(
-            id=str(row["id"]),
-            title=str(row["title"]),
-            status=status,
-            priority=str(row["priority"]),
-            requester=str(row["requester"]),
-            metadata=dict(metadata),
-            created_at=_ensure_datetime(row["created_at"]),
-            updated_at=_ensure_datetime(row["updated_at"]),
+            id=row.id,
+            title=row.title,
+            status=TicketStatus(row.status),
+            priority=row.priority,
+            requester=row.requester,
+            metadata=dict(row.metadata_ or {}),
+            created_at=_ensure_datetime(row.created_at),
+            updated_at=_ensure_datetime(row.updated_at),
         )
 
     @staticmethod
-    def _row_to_message(row: Mapping[str, Any]) -> TicketMessage:
-        embedding = row.get("embedding") or []
+    def _table_to_message(row: TicketMessageTable) -> TicketMessage:
+        embedding = row.embedding or []
         return TicketMessage(
-            id=str(row["id"]),
-            ticket_id=str(row["ticket_id"]),
-            author=str(row["author"]),
-            content=str(row["content"]),
-            normalized_content=str(row["normalized_content"]),
+            id=row.id,
+            ticket_id=row.ticket_id,
+            author=row.author,
+            content=row.content,
+            normalized_content=row.normalized_content,
             embedding=[float(value) for value in embedding],
-            created_at=_ensure_datetime(row["created_at"]),
+            created_at=_ensure_datetime(row.created_at),
         )
 
     @staticmethod
-    def _row_to_audit(row: Mapping[str, Any]) -> TicketAuditLog:
-        metadata = row.get("metadata") or {}
-        from_status = row.get("from_status")
-        to_status = row.get("to_status")
+    def _table_to_audit(row: TicketAuditLogTable) -> TicketAuditLog:
+        from_status = row.from_status
+        to_status = row.to_status
         return TicketAuditLog(
-            id=str(row["id"]),
-            ticket_id=str(row["ticket_id"]),
-            action=str(row["action"]),
-            actor=str(row["actor"]),
-            from_status=TicketStatus(str(from_status)) if from_status else None,
-            to_status=TicketStatus(str(to_status)) if to_status else None,
-            metadata=dict(metadata),
-            created_at=_ensure_datetime(row["created_at"]),
+            id=row.id,
+            ticket_id=row.ticket_id,
+            action=row.action,
+            actor=row.actor,
+            from_status=TicketStatus(from_status) if from_status else None,
+            to_status=TicketStatus(to_status) if to_status else None,
+            metadata=dict(row.metadata_ or {}),
+            created_at=_ensure_datetime(row.created_at),
         )
 
 
-def _ensure_datetime(value: Any) -> datetime:
+def _ensure_datetime(value: datetime | None) -> datetime:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value
-    return datetime.fromisoformat(str(value))
-
-
+    raise TypeError("Expected datetime value from database")
 class TicketService:
     """High level orchestration for ticket CRUD, state machine and audit logging."""
 

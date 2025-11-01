@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from apps.api.middleware import RBACMiddleware
 from apps.api.routes import answers, ping, tickets
@@ -9,6 +10,16 @@ from apps.api.core.logging import configure_logging, init_tracer, shutdown_trace
 from apps.api.services.postgres import PostgresConnectionTester
 from apps.api.services.qdrant import QdrantConnectionTester
 from apps.api.services.tickets import TicketProcessingPipeline, TicketRepository, TicketService
+
+
+def _to_asyncpg_dsn(dsn: str) -> str:
+    """Ensure the SQLAlchemy DSN uses the asyncpg driver."""
+
+    if dsn.startswith("postgresql+asyncpg://"):
+        return dsn
+    if dsn.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + dsn[len("postgresql://") :]
+    return dsn
 
 
 @asynccontextmanager
@@ -28,17 +39,29 @@ def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
 
     app.state.postgres_tester = postgres_tester
     app.state.qdrant_tester = qdrant_tester
+    db_engine = None
+    app.state.db_engine = None
+    app.state.db_session_factory = None
     try:
-        pool = await postgres_tester.get_pool()
-        ticket_repository = TicketRepository(pool)
+        await postgres_tester.get_pool()
+        db_engine = create_async_engine(_to_asyncpg_dsn(settings.postgres_dsn), future=True)
+        session_factory = async_sessionmaker(db_engine, expire_on_commit=False)
+        ticket_repository = TicketRepository(session_factory, engine=db_engine)
         await ticket_repository.ensure_schema()
         ticket_pipeline = TicketProcessingPipeline()
         app.state.ticket_service = TicketService(ticket_repository, pipeline=ticket_pipeline)
+        app.state.db_engine = db_engine
+        app.state.db_session_factory = session_factory
     except Exception:  # pragma: no cover - service initialisation best effort
         app.state.ticket_service = None
+        if db_engine is not None:
+            await db_engine.dispose()
+            db_engine = None
     try:
         yield
     finally:
+        if db_engine is not None:
+            await db_engine.dispose()
         await postgres_tester.close()
         await qdrant_tester.close()
         shutdown_tracer(tracer_provider)
