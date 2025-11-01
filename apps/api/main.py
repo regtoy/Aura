@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from apps.api.api.routes import answers, ping, tickets
 from apps.api.core.config import get_settings
+from apps.api.core.logging import configure_logging, init_tracer, shutdown_tracer
 from apps.api.services.postgres import PostgresConnectionTester
 from apps.api.services.qdrant import QdrantConnectionTester
 from apps.api.services.tickets import TicketProcessingPipeline, TicketRepository, TicketService
@@ -12,6 +13,11 @@ from apps.api.services.tickets import TicketProcessingPipeline, TicketRepository
 @asynccontextmanager
 def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
     settings = get_settings()
+    logger = configure_logging(settings)
+    tracer_provider = init_tracer(settings)
+
+    app.state.logger = logger
+    app.state.tracer_provider = tracer_provider
     postgres_tester = PostgresConnectionTester(dsn=settings.postgres_dsn)
     qdrant_tester = QdrantConnectionTester(
         host=settings.qdrant_host,
@@ -34,6 +40,7 @@ def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
     finally:
         await postgres_tester.close()
         await qdrant_tester.close()
+        shutdown_tracer(tracer_provider)
 
 
 def create_app() -> FastAPI:
