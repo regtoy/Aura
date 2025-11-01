@@ -1,5 +1,12 @@
 # ACF-RAG Projesi Geliştirme Dokümanı (v1)
 
+## Sürüm Geçmişi
+
+| Tarih | Sürüm | Açıklama |
+| --- | --- | --- |
+| 2025-02-14 | 1.0.1 | Navigasyon bağlantıları, ASCII mimari diyagramı ve Codex rehberi ile çapraz referanslar eklendi. |
+| 2025-02-13 | 1.0.0 | İlk yayınlanan sürüm. |
+
 ## 1. Giriş
 Bu doküman, Amasya Üniversitesi için planlanan Agentic Corrective-Fusion RAG (ACF-RAG) platformunun "v1" sürümü için izlenecek geliştirme yaklaşımını, bileşenleri ve beklenen çıktılarını detaylandırır. Önceki planlama çıktılarında tanımlanan mimariyi gerçek bir ürün haline getirmek üzere yazılım geliştirme, veri hazırlama ve operasyon adımlarını sistematik hale getirir.
 
@@ -24,6 +31,26 @@ Bu doküman, Amasya Üniversitesi için planlanan Agentic Corrective-Fusion RAG 
 - **LLM:** LM Studio üzerinden servis edilen `qwen2.5-14b-instruct` (tool-calling yetenekli).
 - **Ticket ve istatistikler:** PostgreSQL tabloları (`tickets`, `ticket_messages`, `confidence_stats`, `allowed_domains`, `users`).
 
+### 3.3. Servisler Arası Akış (ASCII Diyagram)
+
+```
+Kullanıcı (Streamlit)
+        |
+        v
+ FastAPI API  --->  PostgreSQL (tickets, domain, eşik)
+        |
+        v
+ LangGraph Orkestratörü
+   |      |        \
+   |      |         \--> ReAct Web Agent --whitelist--> httpx/ScrapeGraphAI
+   |      v
+   |   Temporal & CRAG değerlendirme
+   v
+ Qdrant (amasya_kb)
+
+Ticket onayı -> Normalize & Embed -> Qdrant'a geri yazım
+```
+
 ## 4. Geliştirme Yol Haritası
 | Faz | Hedef | Açıklama |
 | --- | --- | --- |
@@ -34,6 +61,20 @@ Bu doküman, Amasya Üniversitesi için planlanan Agentic Corrective-Fusion RAG 
 | F5 | Yanıt Derleyici | Citation yönetimi, temporal doğrulama ve streaming kurgusu.
 | F6 | Ticket Döngüsü | Ticket CRUD, normalize/embed işlemleri, Streamlit yönetim paneli.
 | F7 | Observability | Log şeması, Prometheus metrikleri, uyarı politikaları.
+
+> **Codex eşlemesi:** Ayrıntılı, adım adım otomasyon yönergeleri için [Codex Destekli Geliştirme Adımları](./codex_gelistirme_adimlari.md) dosyasına bakın. Her fazın kapsadığı adımlar aşağıda özetlenmiştir.
+
+### 4.1. Faz ↔ Codex Adımı Eşlemesi
+
+| Faz | Kapsanan Codex Adımları |
+| --- | --- |
+| F1 | [Adım 1](./codex_gelistirme_adimlari.md#adim-1-proje-iskeletinin-olusturulmasi) – [Adım 4](./codex_gelistirme_adimlari.md#adim-4-veri-tabani-semalari-postgresql) |
+| F2 | [Adım 5](./codex_gelistirme_adimlari.md#adim-5-qdrant-istemci-modulu) – [Adım 8](./codex_gelistirme_adimlari.md#adim-8-sorgu-genisletme-ve-rag-fusion) |
+| F3 | [Adım 9](./codex_gelistirme_adimlari.md#adim-9-crag-degerlendirici-entegrasyonu) – [Adım 10](./codex_gelistirme_adimlari.md#adim-10-temporal-dogrulama-modulu) |
+| F4 | [Adım 11](./codex_gelistirme_adimlari.md#adim-11-agent-arac-katmani) – [Adım 12](./codex_gelistirme_adimlari.md#adim-12-react-workflow-entegrasyonu) |
+| F5 | [Adım 13](./codex_gelistirme_adimlari.md#adim-13-yanit-derleyici-ve-citation-yonetimi) |
+| F6 | [Adım 14](./codex_gelistirme_adimlari.md#adim-14-ticket-servisi) – [Adım 15](./codex_gelistirme_adimlari.md#adim-15-streamlit-arayuzu) |
+| F7 | [Adım 16](./codex_gelistirme_adimlari.md#adim-16-observability-katmani) – [Adım 18](./codex_gelistirme_adimlari.md#adim-18-cicd-pipeline) |
 
 ## 5. Test ve Doğrulama Stratejisi
 - **Retrieval Doğrulaması:** Türkçe MTEB alt setleri + alan içi manuel değerlendirme.
