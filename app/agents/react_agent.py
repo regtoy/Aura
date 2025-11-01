@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Protocol
+from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol
+
+from app.security.whitelist import WhitelistValidationError, whitelist_pre_run_hook
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +165,9 @@ class ToolNotFoundError(LookupError):
         self.available = available or []
 
 
+PreRunHook = Callable[[str], None]
+
+
 class ReactAgent:
     """High-level agent that orchestrates planning, acting, and observing.
 
@@ -189,6 +194,7 @@ class ReactAgent:
         memory: Optional[AgentMemory] = None,
         *,
         max_steps: int = 10,
+        pre_run_hooks: Optional[Iterable[PreRunHook]] = None,
     ) -> None:
         self.planner = planner
         self.tool_selector = tool_selector
@@ -198,6 +204,19 @@ class ReactAgent:
         self._current_step = 0
         self._current_instruction: Optional[str] = None
         self._finished = False
+        self._pre_run_hooks: List[PreRunHook] = list(pre_run_hooks or [])
+
+        if whitelist_pre_run_hook not in self._pre_run_hooks:
+            self._pre_run_hooks.append(whitelist_pre_run_hook)
+
+    def add_pre_run_hook(self, hook: PreRunHook) -> None:
+        """Register a hook executed before the workflow starts."""
+
+        self._pre_run_hooks.append(hook)
+
+    def _run_pre_run_hooks(self, task_description: str) -> None:
+        for hook in self._pre_run_hooks:
+            hook(task_description)
 
     def run(self, task_description: str) -> List[Dict[str, Any]]:
         """Run the agent loop until completion.
@@ -207,6 +226,14 @@ class ReactAgent:
         """
 
         logger.info("Agent run started with task: %s", task_description)
+        try:
+            self._run_pre_run_hooks(task_description)
+        except WhitelistValidationError:
+            logger.error("Whitelist validation failed for task: %s", task_description)
+            raise
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Pre-run hook failed for task: %s", task_description)
+            raise
         self.memory.update_plan(self.planner.create_plan(task_description))
         for instruction in self.memory.plan:
             if self._current_step >= self.max_steps:
