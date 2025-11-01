@@ -31,6 +31,9 @@ retrieval = [
     "torch>=2.1",
 ]
 
+[tool.setuptools.packages.find]
+include = ["apps*"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 pythonpath = ["."]

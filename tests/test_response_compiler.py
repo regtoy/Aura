@@ -1,6 +1,6 @@
 import pytest
 
-from app.response import ResponseCompiler, RetrievedDocument
+from apps.api.response import ResponseCompiler, RetrievedDocument
 
 
 def build_document(document_id: str, score: float, **metadata):

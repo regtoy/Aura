@@ -3,8 +3,8 @@ from typing import Iterable
 
 import pytest
 
-from app.agents.react_agent import AgentMemory, ObservationProcessor, Planner, ReactAgent, ToolSelector
-from app.security.whitelist import (
+from apps.api.agents.react_agent import AgentMemory, ObservationProcessor, Planner, ReactAgent, ToolSelector
+from apps.api.security.whitelist import (
     WhitelistValidationError,
     extract_domains,
     validate_task_description,

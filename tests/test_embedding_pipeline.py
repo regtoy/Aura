@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from app.retrieval.embedding_pipeline import EmbeddingPipeline, EmbeddingPipelineConfig, SentencePair
+from apps.api.retrieval.embedding_pipeline import EmbeddingPipeline, EmbeddingPipelineConfig, SentencePair
 
 
 class DummyModel:

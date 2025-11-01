@@ -1,14 +1,14 @@
 import pytest
 
-from app.retrieval.pipeline import RAGFusionPipeline, RetrieverConfig
-from app.retrieval.query_expansion import (
+from apps.api.retrieval.pipeline import RAGFusionPipeline, RetrieverConfig
+from apps.api.retrieval.query_expansion import (
     KeywordSynonymExpansionStrategy,
     LLMQueryExpansionStrategy,
     QueryContext,
     QueryExpander,
 )
-from app.retrieval.rrf import ScoredDocument, reciprocal_rank_fusion
-from app.retrieval.types import RetrievalResult
+from apps.api.retrieval.rrf import ScoredDocument, reciprocal_rank_fusion
+from apps.api.retrieval.types import RetrievalResult
 
 
 class DummyRetriever:

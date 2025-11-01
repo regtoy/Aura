@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from app.dependencies.auth import Role
+from apps.api.dependencies.auth import Role
 
 
 @dataclass(frozen=True, slots=True)

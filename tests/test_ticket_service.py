@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.services.tickets import (
+from apps.api.services.tickets import (
     DefaultTicketEmbedder,
     Ticket,
     TicketAggregate,

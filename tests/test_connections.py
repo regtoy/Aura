@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.postgres import PostgresConnectionTester
-from app.services.qdrant import QdrantConnectionTester
+from apps.api.services.postgres import PostgresConnectionTester
+from apps.api.services.qdrant import QdrantConnectionTester
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_postgres_connection_tester(monkeypatch):
     async def create_pool(**kwargs):
         return pool_mock
 
-    monkeypatch.setattr("app.services.postgres.asyncpg.create_pool", create_pool)
+    monkeypatch.setattr("apps.api.services.postgres.asyncpg.create_pool", create_pool)
 
     tester = PostgresConnectionTester("postgresql://test")
     assert await tester.test_connection() is True
@@ -54,8 +54,8 @@ def test_postgres_sync_helper(monkeypatch):
         return True
 
     monkeypatch.setattr(PostgresConnectionTester, "test_connection", fake_test)
-    monkeypatch.setattr("app.services.postgres.asyncio.wait_for", wait_for_stub)
-    monkeypatch.setattr("app.services.postgres.asyncio.run", run_stub)
+    monkeypatch.setattr("apps.api.services.postgres.asyncio.wait_for", wait_for_stub)
+    monkeypatch.setattr("apps.api.services.postgres.asyncio.run", run_stub)
 
     tester = PostgresConnectionTester("postgresql://test")
 
@@ -77,7 +77,7 @@ async def test_qdrant_connection_tester(monkeypatch):
     def factory(*_, **__):
         return client_mock
 
-    monkeypatch.setattr("app.services.qdrant.QdrantClient", factory)
+    monkeypatch.setattr("apps.api.services.qdrant.QdrantClient", factory)
 
     tester = QdrantConnectionTester(host="localhost", port=6333)
     assert await tester.test_connection() is True

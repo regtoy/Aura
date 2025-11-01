@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.dependencies.auth import Role, User, role_required
+from apps.api.dependencies.auth import Role, User, role_required
 
 
 @pytest.mark.asyncio

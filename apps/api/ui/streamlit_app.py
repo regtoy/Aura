@@ -5,11 +5,11 @@ from typing import Callable, Sequence
 
 import streamlit as st
 
-from app.dependencies.auth import Role
-from app.services.tickets import TicketStatus
-from app.ui.api import APIError, AuraAPIClient
-from app.ui.auth import AuthProfile, preset_profiles, resolve_token
-from app.ui.utils import parse_document_lines, parse_metadata
+from apps.api.dependencies.auth import Role
+from apps.api.services.tickets import TicketStatus
+from apps.api.ui.api import APIError, AuraAPIClient
+from apps.api.ui.auth import AuthProfile, preset_profiles, resolve_token
+from apps.api.ui.utils import parse_document_lines, parse_metadata
 
 DEFAULT_BASE_URL = os.getenv("AURA_API_BASE_URL", "http://localhost:8000")
 

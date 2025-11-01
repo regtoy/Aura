@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.dependencies.auth import CurrentUser, Role, role_required
+from apps.api.dependencies.auth import CurrentUser, Role, role_required
 
 router = APIRouter(prefix="/ping", tags=["health"])
 

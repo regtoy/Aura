@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.services.tickets import TicketRepository, TicketStatus
+from apps.api.services.tickets import TicketRepository, TicketStatus
 
 
 class DummyAcquire:

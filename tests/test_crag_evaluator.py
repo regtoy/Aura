@@ -1,7 +1,7 @@
 import pytest
 
-from app.evaluation import CallableScoreBackend, CRAGConfidenceEvaluator, CandidateAnswer
-from app.services.confidence import ConfidenceStats, ConfidenceStatsRepository
+from apps.api.evaluation import CallableScoreBackend, CRAGConfidenceEvaluator, CandidateAnswer
+from apps.api.services.confidence import ConfidenceStats, ConfidenceStatsRepository
 
 
 class InMemoryConfidenceRepo(ConfidenceStatsRepository):

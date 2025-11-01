@@ -2,11 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import answers, ping, tickets
-from app.core.config import get_settings
-from app.services.postgres import PostgresConnectionTester
-from app.services.qdrant import QdrantConnectionTester
-from app.services.tickets import TicketProcessingPipeline, TicketRepository, TicketService
+from apps.api.api.routes import answers, ping, tickets
+from apps.api.core.config import get_settings
+from apps.api.services.postgres import PostgresConnectionTester
+from apps.api.services.qdrant import QdrantConnectionTester
+from apps.api.services.tickets import TicketProcessingPipeline, TicketRepository, TicketService
 
 
 @asynccontextmanager
