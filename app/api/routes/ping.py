@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.dependencies.auth import CurrentUser, Role, role_required
 
@@ -10,6 +10,10 @@ async def ping() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/secure", summary="RBAC protected endpoint", dependencies=[role_required(Role.EDITOR)])
+@router.get(
+    "/secure",
+    summary="RBAC protected endpoint",
+    dependencies=[Depends(role_required(Role.EDITOR))],
+)
 async def secure_ping(user: CurrentUser) -> dict[str, str]:
     return {"status": "ok", "user": user.username}

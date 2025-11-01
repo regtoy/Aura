@@ -8,7 +8,9 @@ if "asyncpg" not in sys.modules:
     asyncpg_module.create_pool = None
     sys.modules["asyncpg"] = asyncpg_module
 
-if "fastapi" not in sys.modules:
+try:  # pragma: no cover - fallback stub only used in limited environments
+    import fastapi  # type: ignore
+except ModuleNotFoundError:
     fastapi_module = types.ModuleType("fastapi")
 
     class HTTPException(Exception):

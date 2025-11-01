@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import ping
+from app.api.routes import answers, ping
 from app.core.config import get_settings
 from app.services.postgres import PostgresConnectionTester
 from app.services.qdrant import QdrantConnectionTester
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(ping.router)
+    app.include_router(answers.router)
     return app
 
 
