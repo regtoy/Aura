@@ -11,7 +11,9 @@ def stub_external_dependencies():
         asyncpg_module.create_pool = None
         sys.modules["asyncpg"] = asyncpg_module
 
-    if "fastapi" not in sys.modules:
+    try:  # pragma: no cover - fall back when FastAPI is unavailable
+        import fastapi  # type: ignore
+    except ModuleNotFoundError:
         fastapi_module = types.ModuleType("fastapi")
 
         class HTTPException(Exception):
