@@ -2,7 +2,7 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security
+from fastapi import Depends, HTTPException, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 
@@ -25,11 +25,31 @@ class User:
         return role in self.roles
 
 
+TOKEN_USER_MAP: dict[str, tuple[str, tuple[Role, ...]]] = {
+    "admin-token": ("admin", (Role.ADMIN, Role.EDITOR, Role.VIEWER)),
+    "editor-token": ("editor", (Role.EDITOR, Role.VIEWER)),
+    "viewer-token": ("viewer", (Role.VIEWER,)),
+}
+
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+def resolve_user_from_token(token: str | None) -> User:
+    """Return a user instance associated with the provided bearer token."""
+
+    if token is None:
+        return User(username="anonymous", roles=(Role.VIEWER,))
+
+    if token not in TOKEN_USER_MAP:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    username, roles = TOKEN_USER_MAP[token]
+    return User(username=username, roles=roles)
+
+
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)]
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+    request: Request,
 ) -> User:
     """Very small authentication stub.
 
@@ -38,20 +58,14 @@ async def get_current_user(
     from a datastore.
     """
 
-    if credentials is None:
-        return User(username="anonymous", roles=(Role.VIEWER,))
+    cached = getattr(request.state, "user", None)
+    if isinstance(cached, User):
+        return cached
 
-    token_map: dict[str, tuple[str, tuple[Role, ...]]] = {
-        "admin-token": ("admin", (Role.ADMIN, Role.EDITOR, Role.VIEWER)),
-        "editor-token": ("editor", (Role.EDITOR, Role.VIEWER)),
-        "viewer-token": ("viewer", (Role.VIEWER,)),
-    }
-
-    if credentials.credentials not in token_map:
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-
-    username, roles = token_map[credentials.credentials]
-    return User(username=username, roles=roles)
+    token = credentials.credentials if credentials is not None else None
+    user = resolve_user_from_token(token)
+    request.state.user = user
+    return user
 
 
 def role_required(role: Role) -> Callable[[User], User]:

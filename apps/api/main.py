@@ -2,7 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from apps.api.api.routes import answers, ping, tickets
+from apps.api.middleware import RBACMiddleware
+from apps.api.routes import answers, ping, tickets
 from apps.api.core.config import get_settings
 from apps.api.core.logging import configure_logging, init_tracer, shutdown_tracer
 from apps.api.services.postgres import PostgresConnectionTester
@@ -46,6 +47,7 @@ def lifespan(app: FastAPI):  # pragma: no cover - executed by framework
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app.add_middleware(RBACMiddleware)
     app.include_router(ping.router)
     app.include_router(answers.router)
     app.include_router(tickets.router)

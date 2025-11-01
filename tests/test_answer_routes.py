@@ -1,6 +1,6 @@
 import pytest
 
-from apps.api.api.routes import answers
+from apps.api.routes import answers
 
 
 class DummyWebSocket:
