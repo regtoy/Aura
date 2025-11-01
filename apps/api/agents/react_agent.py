@@ -13,9 +13,9 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol
 
-from app.security.whitelist import WhitelistValidationError, whitelist_pre_run_hook
+from apps.api.security.whitelist import WhitelistValidationError, whitelist_pre_run_hook
 
-from app.metrics import MetricsRegistry, metrics_registry as default_metrics_registry
+from apps.api.metrics import MetricsRegistry, metrics_registry as default_metrics_registry
 
 logger = logging.getLogger(__name__)
 

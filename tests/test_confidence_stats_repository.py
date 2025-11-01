@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from app.services.confidence import ConfidenceStats, ConfidenceStatsRepository
+from apps.api.services.confidence import ConfidenceStats, ConfidenceStatsRepository
 
 
 class DummyAcquire:

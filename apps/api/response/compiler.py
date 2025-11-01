@@ -10,7 +10,7 @@ class RetrievedDocument:
 
     The compiler accepts instances of this dataclass to remain agnostic to the
     retrieval backend. Only the `document_id`, `score` and `metadata` fields are
-    required, mirroring the :class:`~app.retrieval.rrf.FusedDocument` shape while
+    required, mirroring the :class:`~apps.api.retrieval.rrf.FusedDocument` shape while
     avoiding a hard dependency on that module.
     """
 

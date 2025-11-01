@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.routes import tickets
-from app.dependencies.auth import User, get_current_user
-from app.services.tickets import Ticket, TicketAggregate, TicketAuditLog, TicketMessage, TicketStatus
+from apps.api.api.routes import tickets
+from apps.api.dependencies.auth import User, get_current_user
+from apps.api.services.tickets import Ticket, TicketAggregate, TicketAuditLog, TicketMessage, TicketStatus
 
 
 def build_ticket_aggregate() -> TicketAggregate:

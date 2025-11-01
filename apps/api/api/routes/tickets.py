@@ -5,8 +5,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from app.dependencies.auth import CurrentUser, User
-from app.services.tickets import (
+from apps.api.dependencies.auth import CurrentUser, User
+from apps.api.services.tickets import (
     Ticket,
     TicketAggregate,
     TicketMessage,

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Protocol, Sequence
 
 from .types import CandidateAnswer, EvaluationResult
-from app.services.confidence import ConfidenceStatsRepository
+from apps.api.services.confidence import ConfidenceStatsRepository
 
 
 class ScoreBackend(Protocol):

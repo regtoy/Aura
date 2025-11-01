@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.response import AnswerStreamer, ResponseCompiler, RetrievedDocument
+from apps.api.response import AnswerStreamer, ResponseCompiler, RetrievedDocument
 
 router = APIRouter(prefix="/answers", tags=["answers"])
 
