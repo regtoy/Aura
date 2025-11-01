@@ -1,7 +1,13 @@
+import asyncio
+import inspect
 import sys
 import types
 
 import pytest
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "asyncio: mark test as requiring asyncio event loop")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -56,3 +62,20 @@ def stub_external_dependencies():
         sys.modules["fastapi"] = fastapi_module
         sys.modules["fastapi.security"] = security_module
     yield
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem):
+    testfunction = pyfuncitem.obj
+    if not inspect.iscoroutinefunction(testfunction):
+        return None
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}  # type: ignore[attr-defined]
+        loop.run_until_complete(testfunction(**kwargs))
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()
+    return True
