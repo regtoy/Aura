@@ -56,6 +56,13 @@ Ticket onayı -> Normalize & Embed -> Qdrant'a geri yazım
 | --- | --- | --- |
 | F1 | API Temelleri | FastAPI iskeleti, RBAC, Qdrant/PostgreSQL bağlantı testleri.
 | F2 | RAG-Fusion | Sorgu genişletme, RRF füzyonu, ince ayarlı embedding pipeline.
+
+### F2 Uygulama Güncellemesi
+- `app/retrieval/query_expansion.py` altında sorgu genişletme stratejileri (LLM + sözlük tabanlı) bir araya getirildi.
+- Çoklu retriever sonuçlarını birleştiren RRF füzyonu `app/retrieval/rrf.py` ve orkestrasyon katmanı `app/retrieval/pipeline.py` ile sağlandı.
+- İnce ayar destekli embedding hattı `app/retrieval/embedding_pipeline.py` dosyasında konfigüre edildi.
+- Testler ve yardımcı stub modülleri ile faz kapsamı doğrulandı.
+
 | F3 | CRAG + Dinamik Eşik | Değerlendirici modeli, `confidence_stats` tablosu ve adaptif eşikler.
 | F4 | Agent Katmanı | ReAct workflow, whitelist kontrolü, kalite metrikleri.
 | F5 | Yanıt Derleyici | Citation yönetimi, temporal doğrulama ve streaming kurgusu.
