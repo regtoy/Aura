@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     qdrant_host: str = Field(default="localhost")
     qdrant_port: int = Field(default=6333)
     qdrant_api_key: str | None = Field(default=None)
+    qdrant_collection_name: str = Field(default="aura-documents")
+    qdrant_vector_size: int = Field(default=384)
+    qdrant_distance: str = Field(default="cosine")
+    qdrant_on_disk_payload: bool = Field(default=True)
 
     # Observability configuration
     otel_enabled: bool = Field(default=False)
